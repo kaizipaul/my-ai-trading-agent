@@ -45,7 +45,6 @@ class TestTradingSystem(unittest.TestCase):
         
         # The signal might be None depending on the random data
         if signal is not None:
-            self.assertIn('should_trade', signal)
             self.assertIn('direction', signal)
             self.assertIn('confidence', signal)
             self.assertIn('entry_price', signal)

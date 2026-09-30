@@ -6,6 +6,7 @@ from datetime import datetime
 from termcolor import cprint
 from dotenv import load_dotenv
 from src.utils.alpaca_client import AlpacaClient
+from src.utils import log_info, log_warning, log_error, log_trade
 
 # Load environment variables if not already loaded
 load_dotenv()
@@ -19,6 +20,7 @@ class AlpacaOrderExecutor:
         """Place a market order"""
         # In development mode with API not configured, just simulate the order
         if self.environment == "development" and not self.client.is_configured:
+            log_info(f"[SIMULATION] Placing {direction} order for {pair}, {units} units")
             cprint(f"🔵 [SIMULATION] Placing {direction} order for {pair}, {units} units", "blue")
             # Return a simulated order ID
             return {
@@ -47,9 +49,10 @@ class AlpacaOrderExecutor:
             )
             
             if not response or "error" in response:
+                log_error(f"Error placing order with Alpaca for {pair}: {response.get('error', 'Unknown error') if response else 'No response'}")
                 cprint(f"❌ Error placing order with Alpaca: {response.get('error', 'Unknown error')}", "red")
                 return None
-                
+
             cprint(f"✅ Order placed: {response.get('order_id', 'N/A')}", "green")
             
             # Map the response to a standard format for our system
@@ -64,57 +67,64 @@ class AlpacaOrderExecutor:
             }
             
         except Exception as e:
+            log_error(f"Error placing order for {pair}: {str(e)}")
             cprint(f"❌ Error placing order: {str(e)}", "red")
             return None
-            
+
     def close_trade(self, symbol):
         """Close an existing trade"""
         # In development mode with API not configured, just simulate the close
         if self.environment == "development" and not self.client.is_configured:
+            log_info(f"[SIMULATION] Closing trade for {symbol}")
             cprint(f"🔵 [SIMULATION] Closing trade for {symbol}", "blue")
             return {
                 "status": "CLOSED",
                 "symbol": symbol
             }
-        
+
         # Use Alpaca client to close the position
         try:
             response = self.client.close_position(symbol)
-            
+
             if not response or "error" in response:
+                log_error(f"Error closing position with Alpaca for {symbol}: {response.get('error', 'Unknown error') if response else 'No response'}")
                 cprint(f"❌ Error closing position with Alpaca: {response.get('error', 'Unknown error')}", "red")
                 return None
-                
+
             cprint(f"✅ Position closed for {symbol}", "green")
             return {
                 "status": "CLOSED",
                 "symbol": symbol,
                 "qty": response.get('qty', 0)
             }
-            
+
         except Exception as e:
+            log_error(f"Error closing trade for {symbol}: {str(e)}")
             cprint(f"❌ Error closing trade: {str(e)}", "red")
             return None
-            
+
     def close_all_positions(self):
         """Close all open positions"""
         # In development mode with API not configured, just simulate
         if self.environment == "development" and not self.client.is_configured:
+            log_info("[SIMULATION] Closing all positions")
             cprint(f"🔵 [SIMULATION] Closing all positions", "blue")
             return {"status": "CLOSED_ALL"}
-        
+
         # Use Alpaca client to close all positions
         try:
             response = self.client.close_all_positions()
-            
+
             if not response or "error" in response:
+                log_error(f"Error closing positions with Alpaca: {response.get('error', 'Unknown error') if response else 'No response'}")
                 cprint(f"❌ Error closing positions with Alpaca: {response.get('error', 'Unknown error')}", "red")
                 return None
-                
+
             cprint(f"✅ All positions closed", "green")
             return {"status": "CLOSED_ALL"}
-            
+
         except Exception as e:
+            log_error(f"Error closing all positions: {str(e)}")
             cprint(f"❌ Error closing all positions: {str(e)}", "red")
             return None
             

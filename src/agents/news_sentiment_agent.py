@@ -2,18 +2,23 @@
 News sentiment analysis agent for forex trading
 """
 import os
-from newsapi import NewsApiClient
 from datetime import datetime, timedelta
 from termcolor import cprint
-from transformers import pipeline
 import pandas as pd
 from src.config import FOREX_PAIRS
 
 class NewsSentimentAgent:
     def __init__(self):
+        # newsapi-python and transformers are heavy, optional dependencies
+        # only needed when sentiment analysis is actually enabled
+        # (ACTIVE_AGENTS['sentiment']) - imported lazily so the rest of the
+        # system doesn't require them to be installed.
+        from newsapi import NewsApiClient
+        from transformers import pipeline
+
         self.newsapi = NewsApiClient(api_key=os.getenv('NEWS_API_KEY'))
         # Load sentiment analyzer
-        self.sentiment_analyzer = pipeline('sentiment-analysis', 
+        self.sentiment_analyzer = pipeline('sentiment-analysis',
                                          model='finiteautomata/bertweet-base-sentiment-analysis')
         self.sentiment_scores = {}
         

@@ -1,0 +1,8 @@
+# Optional extras - only needed if you enable the news sentiment agent
+# (ACTIVE_AGENTS['sentiment'] in src/main.py, disabled by default).
+# These pull in a full transformers/torch-scale install, so they're kept
+# out of the base requirements.txt.
+-r requirements.txt
+newsapi-python>=0.2.7
+transformers>=4.20.0
+torch>=2.0.0

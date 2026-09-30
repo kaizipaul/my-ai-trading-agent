@@ -9,6 +9,7 @@ from termcolor import cprint
 import pandas as pd
 import alpaca_trade_api as tradeapi
 from dotenv import load_dotenv
+from src.utils import log_info, log_warning, log_error, log_trade, call_with_retry
 
 # Load environment variables
 load_dotenv()
@@ -37,10 +38,12 @@ class AlpacaClient:
                     self.base_url,
                     api_version='v2'
                 )
-                self.account = self.api.get_account()
+                self.account = call_with_retry(self.api.get_account)
+                log_info(f"Connected to Alpaca API ({self.base_url}), cash=${float(self.account.cash):.2f}")
                 cprint(f"✅ Connected to Alpaca API ({self.base_url})", "green")
                 cprint(f"💰 Account: ${float(self.account.cash):.2f} available", "green")
             except Exception as e:
+                log_error(f"Failed to connect to Alpaca API: {str(e)}")
                 cprint(f"❌ Failed to connect to Alpaca API: {str(e)}", "red")
                 self.is_configured = False
     
@@ -50,7 +53,7 @@ class AlpacaClient:
             return {"error": "API not configured"}
             
         try:
-            self.account = self.api.get_account()
+            self.account = call_with_retry(self.api.get_account)
             return {
                 "account_id": self.account.id,
                 "cash": float(self.account.cash),
@@ -69,7 +72,7 @@ class AlpacaClient:
             return []
             
         try:
-            positions = self.api.list_positions()
+            positions = call_with_retry(self.api.list_positions)
             return [{
                 "symbol": p.symbol,
                 "qty": float(p.qty),
@@ -90,6 +93,9 @@ class AlpacaClient:
             return None
             
         try:
+            # No retry here: a "position not found" 404 is Alpaca's normal
+            # response when there's no open position for the symbol, not a
+            # transient failure worth retrying.
             position = self.api.get_position(symbol)
             return {
                 "symbol": position.symbol,
@@ -115,7 +121,7 @@ class AlpacaClient:
             symbol = self._format_symbol(symbol)
             
             # Get last quote
-            quote = self.api.get_latest_quote(symbol)
+            quote = call_with_retry(self.api.get_latest_quote, symbol)
             
             # Return mid price (between bid and ask)
             return (float(quote.bidprice) + float(quote.askprice)) / 2
@@ -147,9 +153,10 @@ class AlpacaClient:
             alpaca_timeframe = timeframe_map.get(timeframe, '1D')
             
             # Get the data
-            bars = self.api.get_bars(
-                symbol, 
-                alpaca_timeframe, 
+            bars = call_with_retry(
+                self.api.get_bars,
+                symbol,
+                alpaca_timeframe,
                 limit=limit
             ).df
             
@@ -207,8 +214,9 @@ class AlpacaClient:
                     if take_profit:
                         self._place_take_profit(symbol, side, qty, take_profit)
             
+            log_trade(f"{side.upper()} order placed for {qty} {symbol} (order_id={order_id})")
             cprint(f"✅ {side.upper()} order placed for {qty} {symbol}", "green")
-            
+
             return {
                 "order_id": order_id,
                 "symbol": symbol,
@@ -217,6 +225,7 @@ class AlpacaClient:
                 "status": order.status
             }
         except Exception as e:
+            log_error(f"Error placing market order for {symbol}: {str(e)}")
             cprint(f"❌ Error placing market order: {str(e)}", "red")
             return {"error": str(e)}
     
@@ -290,15 +299,17 @@ class AlpacaClient:
             
             # Close the position
             response = self.api.close_position(symbol)
-            
+
+            log_trade(f"Position closed for {symbol} (qty={float(response.qty)})")
             cprint(f"✅ Position closed for {symbol}", "green")
-            
+
             return {
                 "symbol": symbol,
                 "status": "closed",
                 "qty": float(response.qty)
             }
         except Exception as e:
+            log_error(f"Error closing position for {symbol}: {str(e)}")
             cprint(f"❌ Error closing position: {str(e)}", "red")
             return {"error": str(e)}
     
@@ -309,11 +320,13 @@ class AlpacaClient:
             
         try:
             response = self.api.close_all_positions()
-            
+
+            log_trade("All positions closed")
             cprint(f"✅ All positions closed", "green")
-            
+
             return {"status": "all positions closed"}
         except Exception as e:
+            log_error(f"Error closing all positions: {str(e)}")
             cprint(f"❌ Error closing all positions: {str(e)}", "red")
             return {"error": str(e)}
     
@@ -323,7 +336,7 @@ class AlpacaClient:
             return []
             
         try:
-            orders = self.api.list_orders(status=status)
+            orders = call_with_retry(self.api.list_orders, status=status)
             
             return [{
                 "id": o.id,

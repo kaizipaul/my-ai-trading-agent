@@ -12,6 +12,8 @@ from src.strategies.moving_average_strategy import MovingAverageStrategy
 from src.strategies.kishoka_strategy import KishokaStrategy
 from src.utils.alpaca_order_executor import AlpacaOrderExecutor
 from src.utils.alpaca_position_manager import AlpacaPositionManager
+from src.agents.risk_agent import ForexRiskAgent
+from src.utils import log_info, log_warning, log_error, log_trade
 
 class ForexTradingAgent:
     def __init__(self):
@@ -22,10 +24,14 @@ class ForexTradingAgent:
             'kishoka_killswitch': KishokaStrategy()
         }
         self.recommendations = {}  # Store latest recommendations
-        
+
         # Initialize Alpaca components for trade execution
         self.order_executor = AlpacaOrderExecutor()
         self.position_manager = AlpacaPositionManager()
+
+        # Risk agent shares this agent's position manager so its view of
+        # open positions/equity/P&L matches what's about to be traded
+        self.risk_agent = ForexRiskAgent(position_manager=self.position_manager)
         
     def run(self):
         """Main analysis cycle"""
@@ -62,8 +68,9 @@ class ForexTradingAgent:
                 cprint(f"⏳ No clear opportunity for {pair} at this time", "yellow")
                 
         except Exception as e:
+            log_error(f"Error analyzing {pair}: {str(e)}")
             cprint(f"❌ Error analyzing {pair}: {str(e)}", "red")
-            
+
     def get_market_data(self, pair, timeframe='1h', count=100):
         """Fetch market data for analysis"""
         cprint(f"📈 Fetching {timeframe} data for {pair}...", "blue")
@@ -241,7 +248,16 @@ class ForexTradingAgent:
         if direction == "neutral" or position_size <= 0:
             cprint(f"⏹️ No trade execution needed for {symbol} (Neutral recommendation or zero position size)", "yellow")
             return False
-            
+
+        # Risk gate: daily loss limit and max open positions. Per-symbol
+        # existing-position handling (skip vs. reverse) is done below, since
+        # a reversal is allowed to close/replace a position on this symbol.
+        if not self.risk_agent.check_risk_metrics():
+            msg = f"Risk check blocked trade execution for {symbol}"
+            log_warning(msg)
+            cprint(f"🛑 {msg}", "red")
+            return False
+
         # Check if we already have a position for this symbol
         current_positions = self.position_manager.get_positions()
         existing_position = next((p for p in current_positions if p['pair'] == symbol), None)
@@ -286,10 +302,12 @@ class ForexTradingAgent:
                 stop_loss,
                 take_profit
             )
-            
+
+            log_trade(f"Opened {alpaca_direction} {position_size} {symbol} @ {entry_price} (SL={stop_loss}, TP={take_profit})")
             cprint(f"✅ Order executed successfully for {symbol}", "green")
             return True
         else:
+            log_error(f"Failed to execute order for {symbol} ({alpaca_direction} {position_size} units)")
             cprint(f"❌ Failed to execute order for {symbol}", "red")
             return False
             
@@ -323,24 +341,31 @@ class ForexTradingAgent:
         
         if result:
             self.position_manager.close_position(symbol, reason="manual_close")
+            log_trade(f"Closed position for {symbol}")
             cprint(f"✅ Closed position for {symbol}", "green")
             return True
         else:
+            log_error(f"Failed to close position for {symbol}")
             cprint(f"❌ Failed to close position for {symbol}", "red")
             return False
         
     def close_all_positions(self):
         """Close all open positions"""
+        # Snapshot positions before closing - once close_all_positions()
+        # executes, Alpaca reports zero open positions and we'd have
+        # nothing left to mark closed in our trade history.
+        positions = self.position_manager.get_positions()
+
         result = self.order_executor.close_all_positions()
-        
+
         if result:
-            # Close all positions in our records
-            positions = self.position_manager.get_positions()
             for pos in positions:
                 self.position_manager.close_position(pos['pair'], reason="close_all")
-                
+
+            log_trade(f"Closed all positions ({len(positions)} total)")
             cprint("✅ Closed all positions", "green")
             return True
         else:
+            log_error("Failed to close all positions")
             cprint("❌ Failed to close all positions", "red")
             return False

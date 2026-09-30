@@ -519,9 +519,20 @@ def main_menu():
     print("\nThank you for using the Trading Analysis System. Goodbye!")
 
 if __name__ == "__main__":
+    try:
+        validate_config()
+    except ConfigError as e:
+        cprint(f"\n❌ {str(e)}\n", "red")
+        sys.exit(1)
+
     if len(sys.argv) > 1:
         # Command line arguments for automation
-        if sys.argv[1] == "--run-all":
+        if sys.argv[1] in ("--help", "-h"):
+            print("Usage:")
+            print("  python src/main.py                 Interactive menu")
+            print("  python src/main.py --run-all        Run analysis once on all configured symbols")
+            print("  python src/main.py --run <SYMBOL>   Run analysis once on a single symbol")
+        elif sys.argv[1] == "--run-all":
             run_agents(FOREX_PAIRS, True)
         elif sys.argv[1] == "--run" and len(sys.argv) > 2:
             symbol = sys.argv[2]
@@ -529,6 +540,9 @@ if __name__ == "__main__":
                 run_agents([symbol], True)
             else:
                 cprint(f"Symbol {symbol} not found in configuration", "red")
+        else:
+            cprint(f"Unknown argument: {sys.argv[1]}. Run with --help for usage.", "red")
+            sys.exit(1)
     else:
         # Interactive mode
         main_menu()

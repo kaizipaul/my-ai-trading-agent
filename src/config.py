@@ -43,9 +43,6 @@ MACD_SETTINGS = {
 
 # Strategy params
 STRATEGY_MIN_CONFIDENCE = 0.7
-AI_MODEL = "claude-3-sonnet-20240229"
-AI_MAX_TOKENS = 4096
-AI_TEMPERATURE = 0.7
 
 # System settings
 SLEEP_BETWEEN_RUNS_MINUTES = int(os.getenv('SLEEP_BETWEEN_RUNS_MINUTES', 5))
@@ -73,3 +70,51 @@ def get_instrument_type(symbol):
             return 'commodity'
         return 'forex'
     return 'stock'
+
+
+class ConfigError(Exception):
+    """Raised when the system's configuration is invalid or unsafe to start with"""
+    pass
+
+
+def validate_config():
+    """
+    Validate configuration at startup.
+
+    Raises ConfigError with a clear, actionable message instead of letting
+    the system start in a broken or unexpectedly unsafe state - e.g.
+    EXECUTE_TRADES=true with no way to actually reach Alpaca, or a live
+    (real-money) endpoint enabled without an explicit opt-in.
+    """
+    errors = []
+
+    if not FOREX_PAIRS:
+        errors.append("SYMBOLS must include at least one trading symbol")
+
+    if not (0 < MAX_POSITION_SIZE <= 1):
+        errors.append(f"MAX_RISK_PER_TRADE must be between 0 and 1 (got {MAX_POSITION_SIZE})")
+
+    if not (0 < MAX_DAILY_LOSS <= 1):
+        errors.append(f"MAX_DAILY_LOSS must be between 0 and 1 (got {MAX_DAILY_LOSS})")
+
+    if MAX_OPEN_POSITIONS <= 0:
+        errors.append(f"MAX_OPEN_POSITIONS must be positive (got {MAX_OPEN_POSITIONS})")
+
+    if EXECUTE_TRADES:
+        if not ALPACA_API_KEY or not ALPACA_API_SECRET:
+            errors.append(
+                "EXECUTE_TRADES=true requires ALPACA_API_KEY and ALPACA_API_SECRET to be set - "
+                "refusing to start with trade execution enabled but no way to reach Alpaca"
+            )
+
+        is_live_endpoint = 'paper-api' not in ALPACA_API_URL
+        allow_live = os.getenv('ALLOW_LIVE_TRADING', 'false').lower() in ('true', '1', 't')
+        if is_live_endpoint and not allow_live:
+            errors.append(
+                f"ALPACA_API_URL ({ALPACA_API_URL}) points to a LIVE trading endpoint, not "
+                "paper-api.alpaca.markets. Set ALLOW_LIVE_TRADING=true in your .env if this is "
+                "intentional - this check exists to stop accidental real-money trading."
+            )
+
+    if errors:
+        raise ConfigError("Invalid configuration:\n  - " + "\n  - ".join(errors))

@@ -8,6 +8,7 @@ import pandas as pd
 from termcolor import cprint
 from src.utils.alpaca_client import AlpacaClient
 from src.config import MAX_POSITION_SIZE, MAX_DAILY_LOSS, MAX_OPEN_POSITIONS
+from src.utils import log_info, log_warning, log_error, log_trade
 
 class AlpacaPositionManager:
     def __init__(self, data_dir='data'):
@@ -31,6 +32,7 @@ class AlpacaPositionManager:
                     self.history = json.load(f)
                 cprint(f"📋 Loaded {len(self.history)} trade records from file", "green")
         except Exception as e:
+            log_error(f"Error loading trade history: {str(e)}")
             cprint(f"❌ Error loading trade history: {str(e)}", "red")
     
     def save_history(self):
@@ -39,6 +41,7 @@ class AlpacaPositionManager:
             with open(self.history_file, 'w') as f:
                 json.dump(self.history, f, indent=2)
         except Exception as e:
+            log_error(f"Error saving trade history: {str(e)}")
             cprint(f"❌ Error saving trade history: {str(e)}", "red")
     
     def get_positions(self):
@@ -144,6 +147,7 @@ class AlpacaPositionManager:
         self.save_history()
         
         pl_color = "green" if pl_amount >= 0 else "red"
+        log_trade(f"Closed {pair} position: {pl_amount:.2f} profit/loss ({pips:.1f} pips), reason={reason}")
         cprint(f"💰 Recorded close of {pair} position for {pl_amount:.2f} profit/loss ({pips:.1f} pips)", pl_color)
         
         return self.history[position_index]
